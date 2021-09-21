@@ -1,0 +1,171 @@
+from numpy.core.shape_base import block
+from jira import JIRA
+import requests
+import time
+from datetime import datetime
+requests.packages.urllib3.disable_warnings(
+    requests.packages.urllib3.exceptions.InsecureRequestWarning)
+
+class JiraException(Exception):
+    pass
+
+class Jira(object):
+    __options = {
+        'server': 'https://shozi.atlassian.net/',
+            'verify': True
+    }
+    __client = None
+
+    def __init__(self, **kwargs):
+        if len(kwargs) != 2:
+            raise JiraException(
+                'In order to use this class you need to specify a user and a password as keyword arguments!')
+        else:
+            if 'username' in kwargs.keys():
+                self.__username = kwargs['username']
+            else:
+                raise JiraException(
+                    'You need to specify a username as keyword argument!')
+            if 'password' in kwargs.keys():
+                self.__password = kwargs['password']
+            else:
+                raise JiraException(
+                    'You need to specify a password as keyword argument!')
+
+            try:
+                self.__client = JIRA(self.__options, basic_auth=(
+                    self.__username, self.__password))
+            except:
+                raise JiraException(
+                    'Could not connect to the API, invalid username or password!') from None
+
+    def __str__(self):
+        return 'Jira(username = {}, password = {}, endpoint = {}'.format(self.__username, self.__password, self.__options['server'])
+
+    def __repr__(self):
+        return 'Jira(username = {}, password = {}, endpoint = {}'.format(self.__username, self.__password, self.__options['server'])
+
+    def __format__(self, r):
+        return 'Jira(username = {}, password = {}, endpoint = {}'.format(self.__username, self.__password, self.__options['server'])
+#Purose of each functions and how it is working
+#global variables at top
+    def getProjects(self, raw=False):
+        Projects = []
+        for project in self.__client.projects():
+            if raw:
+                Projects.append(project)
+            else:
+                Projects.append({ 'Name': project.key, 'Description': project.name })
+        return Projects
+
+    def getIssues(self, project_name, maxResults= 3, raw = False, **kwargs):
+        Issues = []
+        if len(kwargs) < 0:
+            raise JiraException('You need to specify a search criteria!')
+        else:
+            searchstring = ' '.join(
+                [(_ + "=" + kwargs[_]) if _ != 'condition' else kwargs[_] for _ in kwargs])
+
+
+            test=self.__client.search_issues('project='+project_name,
+            startAt=0, 
+            maxResults=1, 
+            json_result=True)
+            #this is for pagination
+            total=test.get('total')
+            print(total)    
+
+
+                    # Search issues
+
+
+            block_size = 50
+            block_num = 0
+            jira_search = self.__client.search_issues('project='+project_name, startAt=block_num*block_size, maxResults=block_size, fields="issuetype,created,assignee,timespent,project,watches,priority,timeestimate,status,description,summary,creator,customfield_10020")
+            data_jira = []
+                        # Iteratively read data
+            while bool(jira_search):
+                # Container for Jira's data
+                print("block number",block_num)
+                print("block size",block_size)
+
+                
+                for issue in jira_search:
+                    # Get issue key
+                    issue_key = issue.key
+
+                    # Get request type
+                    request_type = str(issue.fields.issuetype)
+
+                    # Get datetime creation
+                    datetime_creation = issue.fields.created
+                    if datetime_creation is not None:
+                        # Interested in only seconds precision, so slice unnecessary part
+                        datetime_creation = datetime.strptime(datetime_creation[:19], "%Y-%m-%dT%H:%M:%S")
+
+                 
+
+                    # Get reporter’s login and name
+                    reporter_login = None
+                    reporter_name = None
+                    reporter = issue.raw['fields'].get('reporter', None)
+                    if reporter is not None:
+                        reporter_login = reporter.get('key', None)
+                        reporter_name = reporter.get('displayName', None)
+
+                    # Get assignee’s login and name
+                    assignee_login = None
+                    assignee_name = None
+                    assignee = issue.raw['fields'].get('assignee', None)
+                    if assignee is not None:
+                        assignee_login = assignee.get('key', None)
+                        assignee_name = assignee.get('displayName', None)
+
+                    # Get status
+                    status = None
+                    st = issue.fields.status
+                    if st is not None:
+                        status = st.name
+
+                    # Add data to data_jira
+                    data_jira.append((issue_key, request_type, datetime_creation, reporter_login, reporter_name, assignee_login, assignee_name, status))
+
+
+                  
+
+
+
+
+                  
+
+                    
+
+
+                        # Update for the next iteration
+                block_num = block_num + 1
+                
+
+                # Print how many issues were read
+                if block_num % 2 == 0:
+                    print(block_num * block_size)
+
+                # Pause before next reading – just to be sure we will not overload Jira’s server
+                time.sleep(1)   
+                 
+                # New issues search
+                jira_search = self.__client.search_issues('project='+project_name, startAt=block_num*block_size, maxResults=block_size, fields="issuetype,created,assignee,timespent,project,watches,priority,timeestimate,status,description,summary,creator")
+
+            
+            
+        return data_jira
+
+   
+
+if __name__ == '__main__':
+    MyJira = Jira(username='shehroze19@gmail.com', password='6yNzIv3CEJskJj8YktyXFD90')
+    print(MyJira.getProjects())
+
+    #Enter project name here
+    print(MyJira.getIssues("test"))
+
+    #add variabvles for input
